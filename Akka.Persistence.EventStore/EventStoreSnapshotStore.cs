@@ -1,7 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Akka.Actor;
+using Akka.Configuration;
 using Akka.Event;
 using Akka.Persistence.Snapshot;
 using Akka.Serialization;
@@ -15,7 +18,8 @@ namespace Akka.Persistence.EventStore
         private readonly ILoggingAdapter _log = Logging.GetLogger(Context);
         private readonly EventStorePersistenceExtension _extension;
         private Lazy<Task<IEventStoreConnection>> _connection;
-        private Serializer _serializer;
+        private EventStoreSerialization _serilization;
+        private int _readBatchSize = 50;
 
         public EventStoreSnapshotStore()
         {
@@ -27,8 +31,7 @@ namespace Akka.Persistence.EventStore
         {
             base.PreStart();
 
-            var serialization = Context.System.Serialization;
-            _serializer = serialization.FindSerializerForType(typeof(SelectedSnapshot));
+            _serilization = new EventStoreSerialization(Context.System.Serialization);
 
             _connection = new Lazy<Task<IEventStoreConnection>>(async () =>
             {
@@ -45,89 +48,79 @@ namespace Akka.Persistence.EventStore
 
         protected override async Task<SelectedSnapshot> LoadAsync(string persistenceId, SnapshotSelectionCriteria criteria)
         {
+            if (criteria == SnapshotSelectionCriteria.None) return null; // short circuit
+
             var connection = await GetConnection();
-            var streamName = GetStreamName(persistenceId);
-            var requestedSnapVersion = (int)criteria.MaxSequenceNr;
-            StreamEventsSlice slice = null;
-            if (criteria.MaxSequenceNr == long.MaxValue)
-            {
-                requestedSnapVersion = StreamPosition.End;
-                slice = await connection.ReadStreamEventsBackwardAsync(streamName, requestedSnapVersion, 1, false);
-            }
-            else
-            {
-                slice = await connection.ReadStreamEventsBackwardAsync(streamName, StreamPosition.End, requestedSnapVersion, false);
-            }
+            var streamId = GetStreamName(persistenceId);
+            var deletes = new List<IDeleteEvent>();
+            var readFrom = StreamPosition.End;
 
-            if (slice.Status == SliceReadStatus.StreamNotFound)
+            StreamEventsSlice slice;
+            do
             {
-                await connection.SetStreamMetadataAsync(streamName, ExpectedVersion.Any, StreamMetadata.Data);
-                return null;
-            }
-
-            if (slice.Events.Any())
-            {
-                _log.Debug("Found snapshot of {0}", persistenceId);
-                if (requestedSnapVersion == StreamPosition.End)
+                slice = await connection.ReadStreamEventsBackwardAsync(streamId, readFrom, _readBatchSize, false);
+                foreach (var resolvedEvent in slice.Events)
                 {
-                    var @event = slice.Events.First().OriginalEvent;
-                    return (SelectedSnapshot)_serializer.FromBinary(@event.Data, typeof(SelectedSnapshot));
+                    var snapshotEvent = _serilization.Deserialize<ISnapshotEvent>(resolvedEvent.Event);
+                    switch (snapshotEvent)
+                    {
+                        case Snapshot s:
+                            if (deletes.Any(d => d.EventMatches(s.Metadata))) break; // ignore this snapshot as it has been deleted
+                            if (s.Metadata.SequenceNr < criteria.MinSequenceNr
+                                || s.Metadata.Timestamp < criteria.MinTimestamp)
+                            {   // remaining events can't fit in selection criteria
+                                return null;
+                            }
+                            if (criteria.IsMatch(s.Metadata))
+                            {
+                                return new SelectedSnapshot(s.Metadata,s.Data);
+                            }
+                            break;
+                        case IDeleteEvent de:
+                            deletes.Add(de);
+                            break;
+                    }
                 }
-                else
-                {
-                    var @event = slice.Events.Where(t => t.OriginalEvent.EventNumber == requestedSnapVersion).First().OriginalEvent;
-                    return (SelectedSnapshot)_serializer.FromBinary(@event.Data, typeof(SelectedSnapshot));
-                }
-            }
+                readFrom = slice.NextEventNumber;
 
+            } while (slice.IsEndOfStream == false);
+
+            // didn't find a snapshot
             return null;
         }
 
         private static string GetStreamName(string persistenceId)
         {
-            return string.Format("snapshot-{0}", persistenceId);
+            return $"snapshot-{persistenceId}";
         }
 
         protected override async Task SaveAsync(SnapshotMetadata metadata, object snapshot)
         {
             var connection = await GetConnection();
             var streamName = GetStreamName(metadata.PersistenceId);
-            var data = _serializer.ToBinary(new SelectedSnapshot(metadata, snapshot));
-            var eventData = new EventData(Guid.NewGuid(), typeof(Serialization.Snapshot).Name, false, data, new byte[0]);
+            var eventData = _serilization.Serialize(new Snapshot(snapshot, metadata));
 
             await connection.AppendToStreamAsync(streamName, ExpectedVersion.Any, eventData);
         }
 
-        protected override Task DeleteAsync(SnapshotMetadata metadata)
+        protected override async Task DeleteAsync(SnapshotMetadata metadata)
         {
-            // no-op
-            return Task.Run(() => { });
+            await Delete(metadata.PersistenceId, new DeleteEvent(metadata.SequenceNr, metadata.Timestamp));
         }
 
-        protected override Task DeleteAsync(string persistenceId, SnapshotSelectionCriteria criteria)
+        protected override async Task DeleteAsync(string persistenceId, SnapshotSelectionCriteria criteria)
         {
-            // no-op
-            return Task.Run(() => { });
+            await Delete(persistenceId,new DeleteCriteriaEvent(criteria.MaxSequenceNr, criteria.MaxTimeStamp, criteria.MinSequenceNr, criteria.MinTimestamp));
         }
 
-        public class StreamMetadata
+        private async Task Delete(string persistanceId, IDeleteEvent deleteEvent)
         {
-            [JsonProperty("$maxCount")]
-            public int MaxCount = 1;
+            var connection = await GetConnection();
+            var streamName = GetStreamName(persistanceId);
+            var eventData = _serilization.Serialize(deleteEvent);
 
-            private StreamMetadata()
-            {
-            }
-
-            private static readonly StreamMetadata Instance = new StreamMetadata();
-
-            public static byte[] Data
-            {
-                get
-                {
-                    return Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(Instance));
-                }
-            }
+            await connection.AppendToStreamAsync(streamName, ExpectedVersion.Any, eventData);
         }
+
     }
 }

@@ -62,12 +62,18 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="DeserializationException.cs" />
     <Compile Include="EventStoreExtension.cs" />
     <Compile Include="EventStoreJournal.cs" />
+    <Compile Include="EventStoreSerialization.cs" />
+    <Compile Include="EventStoreSerializer.cs" />
     <Compile Include="EventStoreSnapshotStore.cs" />
     <Compile Include="GuidUtility.cs" />
+    <Compile Include="NewtonSoftJsonEventStoreSerializer.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Settings.cs" />
+    <Compile Include="SnapshotEvent.cs" />
+    <Compile Include="SnapshotSelectionCriteriaExtensions.cs" />
     <EmbeddedResource Include="reference.conf" />
   </ItemGroup>
   <ItemGroup>
