@@ -13,8 +13,7 @@ namespace Akka.Persistence.EventStore.Tests
 	            loglevel = DEBUG
                 loggers = [""Akka.Logger.NLog.NLogLogger,Akka.Logger.NLog""]
 
-                persistence {
-
+persistence {
                 publish-plugin-commands = on
                 journal {
                     plugin = ""akka.persistence.journal.event-store""

@@ -14,7 +14,7 @@ namespace Akka.Persistence.EventStore.Tests
 
                 persistence {
 
-                publish-plugin-commands = off
+                publish-plugin-commands = on
                 snapshot-store {
                     plugin = ""akka.persistence.snapshot-store.event-store""
                     event-store {
@@ -22,10 +22,10 @@ namespace Akka.Persistence.EventStore.Tests
                         plugin-dispatcher = ""akka.actor.default-dispatcher""
                         
                         # the event store connection string
-			            connection-string = ""ConnectTo=tcp://admin:changeit@127.0.0.1:1113;""
+                        connection-string = ""ConnectTo=tcp://admin:changeit@127.0.0.1:1113;""
 
-			            # name of the connection
-			            connection-name = ""akka.net""
+                        # name of the connection
+                        connection-name = ""akka.net""
                     }
                 }
             }

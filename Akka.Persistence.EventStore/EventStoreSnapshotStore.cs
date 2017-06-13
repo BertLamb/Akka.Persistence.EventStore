@@ -15,7 +15,6 @@ namespace Akka.Persistence.EventStore
 {
     public class EventStoreSnapshotStore : SnapshotStore
     {
-        private readonly ILoggingAdapter _log = Logging.GetLogger(Context);
         private readonly EventStorePersistenceExtension _extension;
         private Lazy<Task<IEventStoreConnection>> _connection;
         private EventStoreSerialization _serilization;
@@ -23,7 +22,6 @@ namespace Akka.Persistence.EventStore
 
         public EventStoreSnapshotStore()
         {
-            _log = Context.GetLogger();
             _extension = EventStorePersistence.Instance.Apply(Context.System);
         }
 

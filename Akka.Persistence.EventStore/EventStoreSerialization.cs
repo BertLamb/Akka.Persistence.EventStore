@@ -15,7 +15,8 @@ namespace Akka.Persistence.EventStore
 
         public T Deserialize<T>(RecordedEvent recordedEvent)
         {
-            var ser = _serialization.FindSerializerForType(Type.GetType(recordedEvent.EventType));
+            var t = Type.GetType(recordedEvent.EventType, throwOnError: true);
+            var ser = _serialization.FindSerializerForType(t);
             if (ser is EventStoreSerializer ess)
             {
                 return ess.FromEvent<T>(recordedEvent);
@@ -25,12 +26,13 @@ namespace Akka.Persistence.EventStore
 
         public EventData Serialize<T>(T data)
         {
+
             var ser = _serialization.FindSerializerFor(data);
             if (ser is EventStoreSerializer ess)
             {
                 return ess.ToEvent(data);
             }
-            return new EventData(Guid.NewGuid(), typeof(T).FullName, false, ser.ToBinary(data), null);
+            return new EventData(Guid.NewGuid(), typeof(T).AssemblyQualifiedName, false, ser.ToBinary(data), null);
         }
     }
 }

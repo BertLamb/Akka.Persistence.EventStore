@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Runtime.Serialization;
 
-namespace Akka.Persistence.EventStore
+namespace Akka.Persistence.EventStore.Exceptions
 {
     public class DeserializationException : Exception
     {

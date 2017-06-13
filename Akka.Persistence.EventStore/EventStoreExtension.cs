@@ -48,6 +48,13 @@ namespace Akka.Persistence.EventStore
         public EventStorePersistenceExtension(ExtendedActorSystem system)
         {
             system.Settings.InjectTopLevelFallback(EventStorePersistence.DefaultConfiguration());
+            
+            // hack alert 
+            var serializer = new NewtonSoftJsonEventStoreSerializer(system);
+            system.Serialization.AddSerializer(serializer);
+            system.Serialization.AddSerializationMap(typeof(ISnapshotEvent), serializer);
+            system.Serialization.AddSerializationMap(typeof(Persistent), serializer);
+
 
             EventStoreJournalSettings = new EventStoreJournalSettings(system.Settings.Config.GetConfig(EventStoreJournalSettings.ConfigPath));
             EventStoreSnapshotSettings = new EventStoreSnapshotSettings(system.Settings.Config.GetConfig(EventStoreSnapshotSettings.ConfigPath));
@@ -55,7 +62,7 @@ namespace Akka.Persistence.EventStore
     }
 
     /// <summary>
-    /// Singleton class used to setup Azure Storage backend for akka persistence plugin.
+    /// Singleton class used to set up EventStorePersistence for akka persistence plugin.
     /// </summary>
     public class EventStorePersistence : ExtensionIdProvider<EventStorePersistenceExtension>
     {

@@ -1,5 +1,6 @@
 ﻿using System;
 using Akka.Actor;
+using Akka.Persistence.EventStore.Exceptions;
 using Akka.Serialization;
 using EventStore.ClientAPI;
 
@@ -7,6 +8,7 @@ namespace Akka.Persistence.EventStore
 {
     public class NewtonSoftJsonEventStoreSerializer : EventStoreSerializer
     {
+        public override int Identifier => 6977;
         private readonly NewtonSoftJsonSerializer _jsonSerializer;
 
         public NewtonSoftJsonEventStoreSerializer(ExtendedActorSystem system) : base(system)
@@ -30,20 +32,25 @@ namespace Akka.Persistence.EventStore
         {
             if (o is IPersistentRepresentation || o is ISnapshotEvent)
             {
-                return new EventData(Guid.NewGuid(), o.GetType().FullName, true, ToBinary(o), null);
+                return new EventData(Guid.NewGuid(), GetClassForObject(o), true, ToBinary(o), null);
             }
-            throw new ArgumentException($"Cannot serialize {o.GetType().FullName}, SnapshotEvent expected");
+            throw new ArgumentException($"Cannot serialize {o.GetType().AssemblyQualifiedName}, SnapshotEvent expected");
         }
 
         public override object FromEvent(RecordedEvent recordedEvent, Type type)
         {
-            var eventType = Type.GetType(recordedEvent.EventType);
+            var eventType = Type.GetType(recordedEvent.EventType, throwOnError: true);
             var result = FromBinary(recordedEvent.Data, eventType);
-            if (result.GetType() == type)
+            if (type.IsInstanceOfType(result))
             {
                 return result;
             }
             throw new DeserializationException($"Cannot deserialize event as {type}, event: {recordedEvent}");
+        }
+
+        private string GetClassForObject(object o)
+        {
+            return o.GetType().AssemblyQualifiedName;
         }
     }
 }
